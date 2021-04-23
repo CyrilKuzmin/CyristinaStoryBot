@@ -1,4 +1,4 @@
-module github.com/xxlaefxx/go_1
+module github.com/xxlaefxx/CyristinaStoryBot
 
 go 1.16
 

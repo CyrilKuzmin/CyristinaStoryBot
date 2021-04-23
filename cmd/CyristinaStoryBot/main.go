@@ -1,27 +1,34 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"log"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	story "github.com/xxlaefxx/CyristinaStoryBot/internal/story"
 )
 
-func ReadFables() string {
-	fable, _ := ioutil.ReadFile("fables/story_1.json")
-	var data interface{}
-	err := json.Unmarshal(fable, &data)
-	if err != nil {
-		log.Panic(err)
+func GenerateKeyboard(titles []string) tgbotapi.InlineKeyboardMarkup {
+	var buttons []tgbotapi.InlineKeyboardButton
+	for _, title := range titles {
+		buttons = append(buttons, tgbotapi.NewInlineKeyboardButtonData(title, title))
 	}
-	log.Println(data)
-	return fmt.Sprintln(data)
+	var storiesKeyboard = tgbotapi.NewInlineKeyboardMarkup(buttons)
+	return storiesKeyboard
 }
 
 func main() {
-	var fable = ReadFables()
+	var stories = story.ReadAllStories()
+	var titles = story.GetTitles(stories)
+
+	var allStories map[string]story.Story = make(map[string]story.Story)
+
+	for _, t := range titles {
+		for _, s := range stories {
+			if t == s.Title {
+				allStories[t] = s
+			}
+		}
+	}
 
 	bot, err := tgbotapi.NewBotAPI("1781364855:AAGJJqx0pjhCWG_GqpPTuQgZKmZIhwc9Yh4")
 	if err != nil {
@@ -29,21 +36,45 @@ func main() {
 	}
 	log.Println("Bot started :" + bot.Self.UserName)
 
+	bot.Debug = false
+
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
 	updates, _ := bot.GetUpdatesChan(u)
 
 	for update := range updates {
+		if update.CallbackQuery != nil {
+			bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data))
+
+			st, ok := allStories[update.CallbackQuery.Data]
+			if !ok {
+				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Я не знаю такой сказки. Вот что я знаю:")
+				msg.ReplyMarkup = GenerateKeyboard(titles)
+				bot.Send(msg)
+			} else {
+				msg := story.GenerateMessageForStory(update.CallbackQuery.Message.Chat.ID, st)
+				bot.Send(msg)
+			}
+
+		}
+
 		if update.Message == nil {
 			continue
 		}
 
 		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, fable)
-		msg.ReplyToMessageID = update.Message.MessageID
-
-		bot.Send(msg)
+		if update.Message.Command() != "" {
+			switch update.Message.Command() {
+			case "start":
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Привет! Выбирай сказку:")
+				msg.ReplyMarkup = GenerateKeyboard(titles)
+				bot.Send(msg)
+			default:
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите /start")
+				bot.Send(msg)
+			}
+		}
 	}
 }
