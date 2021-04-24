@@ -22,7 +22,7 @@ func helpMessage(chatId int64) tgbotapi.MessageConfig {
 }
 
 func titlesMessage(chatId int64, stories *map[string]story.Story) tgbotapi.MessageConfig {
-	msg := tgbotapi.NewMessage(chatId, "Привет! Выбирай сказку:")
+	msg := tgbotapi.NewMessage(chatId, "Выбирай сказку:")
 	msg.ReplyMarkup = story.GenerateTitlesKeyboard(stories)
 	return msg
 }
@@ -65,9 +65,18 @@ func main() {
 			log.Printf("Callback Query: %s", update.CallbackQuery.Data)
 			bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data))
 			chatID := update.CallbackQuery.Message.Chat.ID
+			if update.CallbackQuery.Data == "OPEN_MENU" {
+				// Открываем менюшку
+				_, err = bot.Send(titlesMessage(update.CallbackQuery.Message.Chat.ID, &allStories))
+				if err != nil {
+					log.Print(err)
+				}
+				continue
+			}
+
 			st, ok := allStories[update.CallbackQuery.Data]
 			if !ok {
-				// Нажал "Продолжить" или что-то иное
+				// Нажал "Продолжить" ...или что-то иное
 				next, alive := currentChats[update.CallbackQuery.Message.Chat.ID]
 				if !alive {
 					bot.Send(helpMessage(chatID))
@@ -78,13 +87,19 @@ func main() {
 					continue
 				}
 				currentChats[chatID].part = currentChats[chatID].part + 1
-				bot.Send(msg)
+				_, err = bot.Send(msg)
+				if err != nil {
+					log.Print(err)
+				}
 				continue
 			} else {
 				// Клиент нажал кнопку с названием сказки. Шлем первую часть
 				msg, _ := story.GenerateMessageForStory(chatID, st, 0)
 				currentChats[chatID] = &NextMessage{st.Title, 1, time.Now().Add(expiryTime)}
-				bot.Send(msg)
+				_, err = bot.Send(msg)
+				if err != nil {
+					log.Print(err)
+				}
 				continue
 			}
 		}
@@ -94,10 +109,16 @@ func main() {
 			log.Printf("Command: %s", update.Message.Command())
 			switch update.Message.Command() {
 			case "start":
-				bot.Send(titlesMessage(update.Message.Chat.ID, &allStories))
+				_, err = bot.Send(titlesMessage(update.Message.Chat.ID, &allStories))
+				if err != nil {
+					log.Print(err)
+				}
 				continue
 			default:
-				bot.Send(helpMessage(update.Message.Chat.ID))
+				_, err = bot.Send(helpMessage(update.Message.Chat.ID))
+				if err != nil {
+					log.Print(err)
+				}
 				continue
 			}
 		}
@@ -110,7 +131,10 @@ func main() {
 
 		// Отправляем хелп, если клиент прислал просто текст
 		log.Printf("Just a message: [%s] %s", update.Message.From.UserName, update.Message.Text)
-		bot.Send(helpMessage(update.Message.Chat.ID))
+		_, err = bot.Send(helpMessage(update.Message.Chat.ID))
+		if err != nil {
+			log.Print(err)
+		}
 
 	}
 }

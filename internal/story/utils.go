@@ -30,15 +30,18 @@ func GetAllStories() map[string]Story {
 }
 
 func GenerateTitlesKeyboard(allStories *map[string]Story) tgbotapi.InlineKeyboardMarkup {
-	var buttons []tgbotapi.InlineKeyboardButton
+	var rows [][]tgbotapi.InlineKeyboardButton
 	var titles []string
 	for k := range *allStories {
 		titles = append(titles, k)
 	}
 	for _, title := range titles {
-		buttons = append(buttons, tgbotapi.NewInlineKeyboardButtonData(title, title))
+		btn := tgbotapi.NewInlineKeyboardButtonData(title, title)
+		row := tgbotapi.NewInlineKeyboardRow(btn)
+		rows = append(rows, row)
 	}
-	var storiesKeyboard = tgbotapi.NewInlineKeyboardMarkup(buttons)
+
+	var storiesKeyboard = tgbotapi.NewInlineKeyboardMarkup(rows...)
 	return storiesKeyboard
 }
 
@@ -81,7 +84,12 @@ func GenerateMessageForStory(chatId int64, st Story, part int) (tgbotapi.PhotoCo
 	msg.ParseMode = "markdown"
 	msg.Caption = st.Content[part].Caption
 	if part < len(st.Content)-1 {
-		bs := []tgbotapi.InlineKeyboardButton{tgbotapi.NewInlineKeyboardButtonData("Продолжить", "Продолжить")}
+		bs := []tgbotapi.InlineKeyboardButton{tgbotapi.NewInlineKeyboardButtonData("Продолжить", "NEXT")}
+		kb := tgbotapi.NewInlineKeyboardMarkup(bs)
+		msg.ReplyMarkup = kb
+	}
+	if part == len(st.Content)-1 {
+		bs := []tgbotapi.InlineKeyboardButton{tgbotapi.NewInlineKeyboardButtonData("Открыть меню", "OPEN_MENU")}
 		kb := tgbotapi.NewInlineKeyboardMarkup(bs)
 		msg.ReplyMarkup = kb
 	}
