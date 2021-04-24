@@ -34,7 +34,8 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	log.Println("Bot started :" + bot.Self.UserName)
+	log.Printf("Bot started : %s", bot.Self.UserName)
+	log.Printf("Stories titles: %#v", titles)
 
 	bot.Debug = false
 
@@ -44,7 +45,9 @@ func main() {
 	updates, _ := bot.GetUpdatesChan(u)
 
 	for update := range updates {
+
 		if update.CallbackQuery != nil {
+			log.Printf("Callback Query: %s", update.CallbackQuery.Data)
 			bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data))
 
 			st, ok := allStories[update.CallbackQuery.Data]
@@ -52,29 +55,41 @@ func main() {
 				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Я не знаю такой сказки. Вот что я знаю:")
 				msg.ReplyMarkup = GenerateKeyboard(titles)
 				bot.Send(msg)
+				continue
 			} else {
-				msg := story.GenerateMessageForStory(update.CallbackQuery.Message.Chat.ID, st)
-				bot.Send(msg)
+				storyMessages := story.GenerateMessagesForStory(update.CallbackQuery.Message.Chat.ID, st)
+				for _, sm := range storyMessages {
+					_, err = bot.Send(sm)
+					if err != nil {
+						log.Print(err)
+					}
+				}
+				continue
 			}
-
 		}
-
-		if update.Message == nil {
-			continue
-		}
-
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
 		if update.Message.Command() != "" {
+			log.Printf("Command: %s", update.Message.Command())
 			switch update.Message.Command() {
 			case "start":
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Привет! Выбирай сказку:")
 				msg.ReplyMarkup = GenerateKeyboard(titles)
 				bot.Send(msg)
+				continue
 			default:
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите /start")
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите /start чтобы получить список сказок")
 				bot.Send(msg)
+				continue
 			}
 		}
+
+		if update.Message == nil {
+			log.Printf("Message is nil. Skipping")
+			continue
+		}
+
+		log.Printf("Just a message: [%s] %s", update.Message.From.UserName, update.Message.Text)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите /start чтобы получить список сказок")
+		bot.Send(msg)
 	}
 }

@@ -10,31 +10,36 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
+var dirName = "./stories"
+
 type Story struct {
-	ID     int64
-	Title  string
-	Text   string
-	IsLong bool
-	Images []string
+	ID      int64
+	Title   string
+	Content []ContentPart
+	IsLong  bool
+}
+
+type ContentPart struct {
+	Image   string
+	Caption string
 }
 
 func ReadAllStories() []Story {
 	var stories []Story
-	var dirName = "./stories"
 	files, err := ioutil.ReadDir(dirName)
 	if err != nil {
 		log.Panic(err)
 	}
 	for _, f := range files {
 		if strings.HasSuffix(f.Name(), ".json") {
-			st := ReadStoriesFromFile(fmt.Sprintf("%s/%s", dirName, f.Name()))
+			st := readStoryFromFile(fmt.Sprintf("%s/%s", dirName, f.Name()))
 			stories = append(stories, st)
 		}
 	}
 	return stories
 }
 
-func ReadStoriesFromFile(path string) Story {
+func readStoryFromFile(path string) Story {
 	st, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.Println(err)
@@ -47,11 +52,16 @@ func ReadStoriesFromFile(path string) Story {
 	return data
 }
 
-func GenerateMessageForStory(chatId int64, st Story) tgbotapi.MessageConfig {
-	text := fmt.Sprintf("*%s*\n\n%s", st.Title, st.Text)
-	msg := tgbotapi.NewMessage(chatId, text)
-	msg.ParseMode = "markdown"
-	return msg
+func GenerateMessagesForStory(chatId int64, st Story) []tgbotapi.PhotoConfig {
+	var messages []tgbotapi.PhotoConfig
+	for _, cp := range st.Content {
+		file := fmt.Sprintf("%s/%s", dirName, cp.Image)
+		msg := tgbotapi.NewPhotoUpload(chatId, file)
+		msg.ParseMode = "markdown"
+		msg.Caption = cp.Caption
+		messages = append(messages, msg)
+	}
+	return messages
 }
 
 func GetTitles(stories []Story) []string {
