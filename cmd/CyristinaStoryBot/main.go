@@ -8,11 +8,19 @@ import (
 	story "github.com/xxlaefxx/CyristinaStoryBot/internal/story"
 )
 
-func cleanup(chats map[int64]*NextMessage) {
+var token = "1781364855:AAGJJqx0pjhCWG_GqpPTuQgZKmZIhwc9Yh4"
+
+const nextMsgTimeout = 15
+
+func cleanup(chats *map[int64]*NextMessage) {
 	log.Print("Cleanuping...")
 	for {
 		time.Sleep(time.Minute)
-
+		for chat, msg := range *chats {
+			if msg.activeUntil.Before(time.Now()) {
+				delete(*chats, chat)
+			}
+		}
 	}
 }
 
@@ -21,13 +29,18 @@ func helpMessage(chatId int64) tgbotapi.MessageConfig {
 	return msg
 }
 
-func titlesMessage(chatId int64, stories *map[string]story.Story) tgbotapi.MessageConfig {
+func titlesMessage(chatId int64) tgbotapi.MessageConfig {
 	msg := tgbotapi.NewMessage(chatId, "Выбирай сказку:")
-	msg.ReplyMarkup = story.GenerateTitlesKeyboard(stories)
+	msg.ReplyMarkup = story.GetTitlesKeyboard()
 	return msg
 }
 
-var token = "1781364855:AAGJJqx0pjhCWG_GqpPTuQgZKmZIhwc9Yh4"
+func sendMsg(bot *tgbotapi.BotAPI, c tgbotapi.Chattable) {
+	_, err := bot.Send(c)
+	if err != nil {
+		log.Print(err)
+	}
+}
 
 type NextMessage struct {
 	title       string
@@ -40,9 +53,9 @@ func main() {
 	allStories := story.GetAllStories()
 
 	var currentChats = make(map[int64]*NextMessage)
-	var expiryTime = time.Duration(time.Minute * 15) // сколько ждем клиента для продолжения
+	var expiryTime = time.Duration(time.Minute * nextMsgTimeout) // сколько ждем клиента для продолжения
 
-	go cleanup(currentChats)
+	go cleanup(&currentChats)
 
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
@@ -50,8 +63,6 @@ func main() {
 	}
 
 	log.Printf("Bot started : %s", bot.Self.UserName)
-
-	bot.Debug = false
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -67,10 +78,7 @@ func main() {
 			chatID := update.CallbackQuery.Message.Chat.ID
 			if update.CallbackQuery.Data == "OPEN_MENU" {
 				// Открываем менюшку
-				_, err = bot.Send(titlesMessage(update.CallbackQuery.Message.Chat.ID, &allStories))
-				if err != nil {
-					log.Print(err)
-				}
+				sendMsg(bot, titlesMessage(update.CallbackQuery.Message.Chat.ID))
 				continue
 			}
 
@@ -79,7 +87,7 @@ func main() {
 				// Нажал "Продолжить" ...или что-то иное
 				next, alive := currentChats[update.CallbackQuery.Message.Chat.ID]
 				if !alive {
-					bot.Send(helpMessage(chatID))
+					sendMsg(bot, helpMessage(chatID))
 					continue
 				}
 				msg, err := story.GenerateMessageForStory(chatID, allStories[next.title], next.part)
@@ -87,19 +95,13 @@ func main() {
 					continue
 				}
 				currentChats[chatID].part = currentChats[chatID].part + 1
-				_, err = bot.Send(msg)
-				if err != nil {
-					log.Print(err)
-				}
+				sendMsg(bot, msg)
 				continue
 			} else {
 				// Клиент нажал кнопку с названием сказки. Шлем первую часть
 				msg, _ := story.GenerateMessageForStory(chatID, st, 0)
 				currentChats[chatID] = &NextMessage{st.Title, 1, time.Now().Add(expiryTime)}
-				_, err = bot.Send(msg)
-				if err != nil {
-					log.Print(err)
-				}
+				sendMsg(bot, msg)
 				continue
 			}
 		}
@@ -109,32 +111,23 @@ func main() {
 			log.Printf("Command: %s", update.Message.Command())
 			switch update.Message.Command() {
 			case "start":
-				_, err = bot.Send(titlesMessage(update.Message.Chat.ID, &allStories))
-				if err != nil {
-					log.Print(err)
-				}
+				sendMsg(bot, titlesMessage(update.Message.Chat.ID))
 				continue
 			default:
-				_, err = bot.Send(helpMessage(update.Message.Chat.ID))
-				if err != nil {
-					log.Print(err)
-				}
+				sendMsg(bot, helpMessage(update.Message.Chat.ID))
 				continue
 			}
 		}
 
 		if update.Message == nil {
 			// Не делаем ничего, если дошли сюда, а сообщения нет. На случай странных callback
-			log.Printf("Message is nil. Skipping")
+			log.Print("Message is nil. Skipping")
 			continue
 		}
 
 		// Отправляем хелп, если клиент прислал просто текст
 		log.Printf("Just a message: [%s] %s", update.Message.From.UserName, update.Message.Text)
-		_, err = bot.Send(helpMessage(update.Message.Chat.ID))
-		if err != nil {
-			log.Print(err)
-		}
+		sendMsg(bot, helpMessage(update.Message.Chat.ID))
 
 	}
 }

@@ -14,7 +14,7 @@ import (
 func GetAllStories() map[string]Story {
 	var allStories map[string]Story = make(map[string]Story)
 	var stories = readAllStories()
-	var titles = readAllTitles()
+	var titles = getAllTitles()
 
 	log.Printf("Stories titles: %#v", titles)
 
@@ -29,13 +29,13 @@ func GetAllStories() map[string]Story {
 	return allStories
 }
 
-func GenerateTitlesKeyboard(allStories *map[string]Story) tgbotapi.InlineKeyboardMarkup {
+func GetTitlesKeyboard() tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
-	var titles []string
-	for k := range *allStories {
-		titles = append(titles, k)
-	}
+	titles := getAllTitles()
 	for _, title := range titles {
+		if len(title) > 60 {
+			title = title[0:60] + "..."
+		}
 		btn := tgbotapi.NewInlineKeyboardButtonData(title, title)
 		row := tgbotapi.NewInlineKeyboardRow(btn)
 		rows = append(rows, row)
@@ -84,19 +84,15 @@ func GenerateMessageForStory(chatId int64, st Story, part int) (tgbotapi.PhotoCo
 	msg.ParseMode = "markdown"
 	msg.Caption = st.Content[part].Caption
 	if part < len(st.Content)-1 {
-		bs := []tgbotapi.InlineKeyboardButton{tgbotapi.NewInlineKeyboardButtonData("Продолжить", "NEXT")}
-		kb := tgbotapi.NewInlineKeyboardMarkup(bs)
-		msg.ReplyMarkup = kb
+		msg.ReplyMarkup = singleInlineButton("Продолжить", "NEXT")
 	}
 	if part == len(st.Content)-1 {
-		bs := []tgbotapi.InlineKeyboardButton{tgbotapi.NewInlineKeyboardButtonData("Открыть меню", "OPEN_MENU")}
-		kb := tgbotapi.NewInlineKeyboardMarkup(bs)
-		msg.ReplyMarkup = kb
+		msg.ReplyMarkup = singleInlineButton("Открыть меню", "OPEN_MENU")
 	}
 	return msg, nil
 }
 
-func readAllTitles() []string {
+func getAllTitles() []string {
 	var titles []string
 	files, err := ioutil.ReadDir(dirName)
 	if err != nil {
@@ -109,4 +105,10 @@ func readAllTitles() []string {
 		}
 	}
 	return titles
+}
+
+func singleInlineButton(text, data string) tgbotapi.InlineKeyboardMarkup {
+	bs := []tgbotapi.InlineKeyboardButton{tgbotapi.NewInlineKeyboardButtonData(text, data)}
+	kb := tgbotapi.NewInlineKeyboardMarkup(bs)
+	return kb
 }
