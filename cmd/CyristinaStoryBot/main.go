@@ -6,10 +6,12 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	story "github.com/xxlaefxx/CyristinaStoryBot/internal/story"
+	storybot "github.com/xxlaefxx/CyristinaStoryBot/internal/storybot"
 )
 
 var token = "1781364855:AAGJJqx0pjhCWG_GqpPTuQgZKmZIhwc9Yh4"
 
+const imagesDir = "stories"
 const nextMsgTimeout = 15
 
 func cleanup(chats *map[int64]*NextMessage) {
@@ -24,24 +26,6 @@ func cleanup(chats *map[int64]*NextMessage) {
 	}
 }
 
-func helpMessage(chatId int64) tgbotapi.MessageConfig {
-	msg := tgbotapi.NewMessage(chatId, "Введите /start чтобы получить список сказок")
-	return msg
-}
-
-func titlesMessage(chatId int64) tgbotapi.MessageConfig {
-	msg := tgbotapi.NewMessage(chatId, "Выбирай сказку:")
-	msg.ReplyMarkup = story.GetTitlesKeyboard()
-	return msg
-}
-
-func sendMsg(bot *tgbotapi.BotAPI, c tgbotapi.Chattable) {
-	_, err := bot.Send(c)
-	if err != nil {
-		log.Print(err)
-	}
-}
-
 type NextMessage struct {
 	title       string
 	part        int
@@ -50,60 +34,69 @@ type NextMessage struct {
 
 func main() {
 
-	allStories := story.GetAllStories()
-
 	var currentChats = make(map[int64]*NextMessage)
 	var expiryTime = time.Duration(time.Minute * nextMsgTimeout) // сколько ждем клиента для продолжения
 
 	go cleanup(&currentChats)
 
-	bot, err := tgbotapi.NewBotAPI(token)
+	dbClient, err := story.NewClient("mongodb://localhost:27017", "stories", "stories")
 	if err != nil {
-		log.Panic(err)
+		log.Panicf("Cannot connect to Mongo: %v", err)
 	}
+	log.Printf("Connected to MongoDB : %s", dbClient.DB)
+	storyBot, err := storybot.NewStoryBot(token, imagesDir)
+	if err != nil {
+		log.Panicf("Cannot connect to Teegram: %v", err)
+	}
+	log.Printf("Bot started : %s", storyBot.Bot.Self.UserName)
 
-	log.Printf("Bot started : %s", bot.Self.UserName)
-
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-
-	updates, _ := bot.GetUpdatesChan(u)
-
-	for update := range updates {
+	for update := range storyBot.Updates {
 
 		if update.CallbackQuery != nil {
 			// Обрабатываем нажатия кнопок Inline-клавиатуры
 			log.Printf("Callback Query: %s", update.CallbackQuery.Data)
-			bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data))
+			storyBot.Bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data))
 			chatID := update.CallbackQuery.Message.Chat.ID
 			if update.CallbackQuery.Data == "OPEN_MENU" {
 				// Открываем менюшку
-				sendMsg(bot, titlesMessage(update.CallbackQuery.Message.Chat.ID))
+				titles, _ := dbClient.GetAllTitles()
+				storyBot.SendTitlesMessage(chatID, titles)
 				continue
 			}
 
-			st, ok := allStories[update.CallbackQuery.Data]
-			if !ok {
-				// Нажал "Продолжить" ...или что-то иное
+			if update.CallbackQuery.Data == "NEXT" {
+				// Шлем нужную часть
 				next, alive := currentChats[update.CallbackQuery.Message.Chat.ID]
 				if !alive {
-					sendMsg(bot, helpMessage(chatID))
+					storyBot.SendHelpMessage(chatID)
 					continue
 				}
-				msg, err := story.GenerateMessageForStory(chatID, allStories[next.title], next.part)
+				cp, err := dbClient.GetStoryPart(next.title, next.part)
 				if err != nil {
 					continue
 				}
+				err = storyBot.SendContentMessage(chatID, cp.Image, cp.Caption)
+				if err != nil {
+					log.Printf("Cannot send %v part of story: %v", next.part, err)
+					continue
+				}
 				currentChats[chatID].part = currentChats[chatID].part + 1
-				sendMsg(bot, msg)
-				continue
-			} else {
-				// Клиент нажал кнопку с названием сказки. Шлем первую часть
-				msg, _ := story.GenerateMessageForStory(chatID, st, 0)
-				currentChats[chatID] = &NextMessage{st.Title, 1, time.Now().Add(expiryTime)}
-				sendMsg(bot, msg)
+				currentChats[chatID].activeUntil = time.Now().Add(expiryTime)
 				continue
 			}
+			// Клиент нажал кнопку с названием сказки. Шлем первую часть
+			cp, err := dbClient.GetStoryPart(update.CallbackQuery.Data, 0)
+			if err != nil {
+				log.Printf("Cannot get 1st part of story: %v", err)
+				continue
+			}
+			err = storyBot.SendContentMessage(chatID, cp.Image, cp.Caption)
+			if err != nil {
+				log.Printf("Cannot send 1st part of story: %v", err)
+				continue
+			}
+			currentChats[chatID] = &NextMessage{update.CallbackQuery.Data, 1, time.Now().Add(expiryTime)}
+			continue
 		}
 
 		if update.Message.Command() != "" {
@@ -111,10 +104,11 @@ func main() {
 			log.Printf("Command: %s", update.Message.Command())
 			switch update.Message.Command() {
 			case "start":
-				sendMsg(bot, titlesMessage(update.Message.Chat.ID))
+				titles, _ := dbClient.GetAllTitles()
+				storyBot.SendTitlesMessage(update.Message.Chat.ID, titles)
 				continue
 			default:
-				sendMsg(bot, helpMessage(update.Message.Chat.ID))
+				storyBot.SendHelpMessage(update.Message.Chat.ID)
 				continue
 			}
 		}
@@ -127,7 +121,6 @@ func main() {
 
 		// Отправляем хелп, если клиент прислал просто текст
 		log.Printf("Just a message: [%s] %s", update.Message.From.UserName, update.Message.Text)
-		sendMsg(bot, helpMessage(update.Message.Chat.ID))
-
+		storyBot.SendHelpMessage(update.Message.Chat.ID)
 	}
 }
