@@ -49,7 +49,9 @@ func (client StoryMongoClient) getStoryByTitle(title string) (Story, error) {
 	return result, nil
 }
 
-func (cliient StoryMongoClient) GetStoryPart(title string, part int) (ContentPart, error) {
+func (cliient StoryMongoClient) GetStoryPart(
+	title string,
+	part int) (ContentPart, error) {
 	var cp ContentPart
 	st, err := cliient.getStoryByTitle(title)
 	if err != nil {

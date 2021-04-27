@@ -43,7 +43,9 @@ func (sb StoryBot) SendMsg(c tgbotapi.Chattable) error {
 }
 
 func (sb StoryBot) SendHelpMessage(chatId int64) error {
-	msg := tgbotapi.NewMessage(chatId, "Введите /start чтобы получить список сказок")
+	msg := tgbotapi.NewMessage(
+		chatId,
+		"Введите /start чтобы получить список сказок")
 	err := sb.SendMsg(msg)
 	return err
 }
@@ -66,16 +68,23 @@ func (sb StoryBot) SendContentMessage(chatId int64, image, text string) error {
 	return err
 }
 
-func getPhotoMessage(chatId int64, pathToImage, caption string) tgbotapi.PhotoConfig {
+func getPhotoMessage(
+	chatId int64,
+	pathToImage, caption string) tgbotapi.PhotoConfig {
+
 	msg := tgbotapi.NewPhotoUpload(chatId, pathToImage)
 	msg.Caption = caption
 	msg.ParseMode = "markdown"
 	ps := strings.Split(pathToImage, "/")
 	file := ps[len(ps)-1]
 	if file != "end.jpg" {
-		msg.ReplyMarkup = singleInlineButton("Продолжить", "NEXT")
+		msg.ReplyMarkup = singleInlineButton(
+			"Продолжить",
+			"NEXT")
 	} else {
-		msg.ReplyMarkup = singleInlineButton("Открыть меню", "OPEN_MENU")
+		msg.ReplyMarkup = singleInlineButton(
+			"Открыть меню",
+			"OPEN_MENU")
 	}
 	return msg
 }
@@ -102,7 +111,10 @@ func getTitlesKeyboard(titles []string) tgbotapi.InlineKeyboardMarkup {
 }
 
 func singleInlineButton(text, data string) tgbotapi.InlineKeyboardMarkup {
-	bs := []tgbotapi.InlineKeyboardButton{tgbotapi.NewInlineKeyboardButtonData(text, data)}
+	bs := []tgbotapi.InlineKeyboardButton{
+		tgbotapi.NewInlineKeyboardButtonData(
+			text,
+			data)}
 	kb := tgbotapi.NewInlineKeyboardMarkup(bs)
 	return kb
 }
