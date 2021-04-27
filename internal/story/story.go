@@ -8,13 +8,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var dirName = "./stories"
-
 type Story struct {
 	ID      int64
 	Title   string
 	Content []ContentPart
-	Parts   int
 }
 
 type ContentPart struct {
@@ -74,7 +71,10 @@ func (client StoryMongoClient) GetAllTitles() ([]string, error) {
 	selectFilter := bson.D{{"Title", 1}} // Только Title
 
 	col := client.Client.Database(client.DB).Collection(client.Collection)
-	cur, err := col.Find(context.TODO(), filter, options.Find().SetProjection(selectFilter))
+	cur, err := col.Find(
+		context.TODO(),
+		filter,
+		options.Find().SetProjection(selectFilter))
 	if err != nil {
 		return result, err
 	}

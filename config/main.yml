@@ -1,0 +1,7 @@
+TG:
+  NextMsgTimeout: "15m"
+  ImagesDir: "./stories"
+
+Mongo:
+  Database: "stories"
+  Collection: "stories"
