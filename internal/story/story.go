@@ -20,9 +20,12 @@ type ContentPart struct {
 }
 
 type StoryMongoClient struct {
-	Client     *mongo.Client
-	DB         string
-	Collection string
+	Client      *mongo.Client
+	DB          string
+	Collection  string
+	allTitles   []string
+	Titles      map[string]bool
+	TitlesCount int
 }
 
 func NewClient(uri, db, collection string) (StoryMongoClient, error) {
@@ -32,6 +35,7 @@ func NewClient(uri, db, collection string) (StoryMongoClient, error) {
 	client.Client, err = mongo.Connect(context.TODO(), clientOptions)
 	client.DB = db
 	client.Collection = collection
+	client.Titles = make(map[string]bool)
 	if err != nil {
 		return client, err
 	}
@@ -61,13 +65,14 @@ func (cliient StoryMongoClient) GetStoryPart(
 	return cp, nil
 }
 
-func (client StoryMongoClient) GetAllTitles() ([]string, error) {
+func (client *StoryMongoClient) GetAllTitles() error {
+	client.allTitles = make([]string, 0, 10)
+
 	type titObj struct {
 		Title string
 	}
 
 	var titles []titObj
-	var result []string
 
 	filter := bson.D{{}}                 // Все документы
 	selectFilter := bson.D{{"Title", 1}} // Только Title
@@ -78,17 +83,34 @@ func (client StoryMongoClient) GetAllTitles() ([]string, error) {
 		filter,
 		options.Find().SetProjection(selectFilter))
 	if err != nil {
-		return result, err
+		return err
 	}
 	defer cur.Close(context.TODO())
 
 	cur.All(context.TODO(), &titles)
 	if err := cur.Err(); err != nil {
-		return result, err
+		return err
 	}
 
 	for _, t := range titles {
-		result = append(result, t.Title)
+		client.allTitles = append(client.allTitles, t.Title)
+		client.Titles[t.Title] = true
 	}
-	return result, nil
+
+	client.allTitles = append(client.allTitles, "THE_END")
+	client.TitlesCount = len(client.allTitles)
+	return nil
+}
+
+// GetTitlesPart возвращает часть тайтлов (10 штук)
+func (client StoryMongoClient) GetTitlesPart(part int) (titles []string) {
+	firstTitle := part * 10
+	lastTitle := part*10 + 9
+	if firstTitle > len(client.allTitles)-1 {
+		firstTitle = len(client.allTitles)
+	}
+	if lastTitle > len(client.allTitles)-1 {
+		lastTitle = len(client.allTitles)
+	}
+	return client.allTitles[firstTitle:lastTitle]
 }

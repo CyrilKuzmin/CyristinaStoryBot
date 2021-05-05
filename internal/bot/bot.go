@@ -1,4 +1,4 @@
-package storybot
+package bot
 
 import (
 	"fmt"
@@ -84,7 +84,7 @@ func getPhotoMessage(
 	} else {
 		msg.ReplyMarkup = singleInlineButton(
 			"Открыть меню",
-			"OPEN_MENU")
+			"OPEN_ALL_TITLES_MENU")
 	}
 	return msg
 }
@@ -97,15 +97,26 @@ func getTextMessage(chatId int64, text string) tgbotapi.MessageConfig {
 
 func getTitlesKeyboard(titles []string) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
+	var isLastPart bool
+	if titles[len(titles)-1] == "THE_END" {
+		isLastPart = true
+	}
 	for _, title := range titles {
 		if len(title) > 60 {
 			title = title[0:60] + "..."
+		}
+		if title == "THE_END" {
+			continue
 		}
 		btn := tgbotapi.NewInlineKeyboardButtonData(title, title)
 		row := tgbotapi.NewInlineKeyboardRow(btn)
 		rows = append(rows, row)
 	}
-
+	if !isLastPart {
+		nextBtn := tgbotapi.NewInlineKeyboardButtonData("Дальше >>>", "NEXT")
+		nextRow := tgbotapi.NewInlineKeyboardRow(nextBtn)
+		rows = append(rows, nextRow)
+	}
 	var storiesKeyboard = tgbotapi.NewInlineKeyboardMarkup(rows...)
 	return storiesKeyboard
 }

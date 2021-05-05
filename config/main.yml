@@ -1,5 +1,5 @@
 TG:
-  NextMsgTimeout: "15m"
+  NextMsgTimeout: "5m"
   ImagesDir: "./stories"
 
 Mongo:

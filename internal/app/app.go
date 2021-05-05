@@ -5,28 +5,19 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	bot "github.com/xxlaefxx/CyristinaStoryBot/internal/bot"
 	config "github.com/xxlaefxx/CyristinaStoryBot/internal/config"
 	story "github.com/xxlaefxx/CyristinaStoryBot/internal/story"
-	storybot "github.com/xxlaefxx/CyristinaStoryBot/internal/storybot"
 )
-
-func cleanup(chats *map[int64]*NextMessage) {
-	log.Print("Cleanuping...")
-	for {
-		time.Sleep(time.Minute)
-		for chat, msg := range *chats {
-			if msg.activeUntil.Before(time.Now()) {
-				delete(*chats, chat)
-			}
-		}
-	}
-}
 
 type NextMessage struct {
 	title       string
 	part        int
 	activeUntil time.Time
 }
+
+var cfg = new(config.Config)
+var currentChats = make(map[int64]*NextMessage)
 
 func Run(configFile string) {
 
@@ -35,9 +26,7 @@ func Run(configFile string) {
 		log.Panicf("Cannot read config: %v", err)
 	}
 
-	var currentChats = make(map[int64]*NextMessage)
-
-	go cleanup(&currentChats)
+	go cleanup()
 
 	dbClient, err := story.NewClient(
 		cfg.Mongo.URI,
@@ -48,8 +37,10 @@ func Run(configFile string) {
 	}
 
 	log.Printf("Connected to MongoDB : %s", dbClient.DB)
+	dbClient.GetAllTitles() // первоначальная загрузка тайтлов
+	go updateTitles(&dbClient)
 
-	storyBot, err := storybot.NewStoryBot(cfg.TG.Token, cfg.TG.ImagesDir)
+	storyBot, err := bot.NewStoryBot(cfg.TG.Token, cfg.TG.ImagesDir)
 	if err != nil {
 		log.Panicf("Cannot connect to Teegram: %v", err)
 	}
@@ -57,29 +48,43 @@ func Run(configFile string) {
 	log.Printf("Bot started : %s", storyBot.Bot.Self.UserName)
 
 	for update := range storyBot.Updates {
-
+		// Варианты событий. что мы обрабатываем
 		if update.CallbackQuery != nil {
 			// Обрабатываем нажатия кнопок Inline-клавиатуры
 			log.Printf("Callback Query: %s", update.CallbackQuery.Data)
+			// Шлем ответ о том, что все ок, обрабатываем-с
 			storyBot.Bot.AnswerCallbackQuery(
 				tgbotapi.NewCallback(
 					update.CallbackQuery.ID,
 					update.CallbackQuery.Data))
 			chatID := update.CallbackQuery.Message.Chat.ID
-			if update.CallbackQuery.Data == "OPEN_MENU" {
-				// Открываем менюшку
-				titles, _ := dbClient.GetAllTitles()
-				storyBot.SendTitlesMessage(chatID, titles)
+			data := update.CallbackQuery.Data
+			if data == "OPEN_ALL_TITLES_MENU" {
+				// Шлем нужную часть клавиатуры
+				titles := getTitlesForKB(&dbClient, chatID)
+				if len(titles) > 0 {
+					storyBot.SendTitlesMessage(chatID, titles)
+				}
 				continue
 			}
 
-			if update.CallbackQuery.Data == "NEXT" {
-				// Шлем нужную часть
+			if data == "NEXT" {
+				// Шлем следующую часть чего-то там
 				next, alive := currentChats[chatID]
 				if !alive {
+					// просрочился кэш, шлем занова help
 					storyBot.SendHelpMessage(chatID)
 					continue
 				}
+				if next.title == "TITLES_KEYBOARD" {
+					// Шлем нужную часть клавиатуры
+					titles := getTitlesForKB(&dbClient, chatID)
+					if len(titles) > 0 {
+						storyBot.SendTitlesMessage(chatID, titles)
+					}
+					continue
+				}
+				// Шлем нужную часть сказки
 				cp, err := dbClient.GetStoryPart(next.title, next.part)
 				if err != nil {
 					continue
@@ -92,8 +97,7 @@ func Run(configFile string) {
 						err)
 					continue
 				}
-				currentChats[chatID].part = currentChats[chatID].part + 1
-				currentChats[chatID].activeUntil = time.Now().Add(cfg.TG.NextMsgTimeout)
+				updateCurrentChatCache(chatID)
 				continue
 			}
 			// Клиент нажал кнопку с названием сказки. Шлем первую часть
@@ -107,38 +111,48 @@ func Run(configFile string) {
 				log.Printf("Cannot send 1st part of story: %v", err)
 				continue
 			}
-			currentChats[chatID] = &NextMessage{
-				update.CallbackQuery.Data, 1,
-				time.Now().Add(cfg.TG.NextMsgTimeout)}
+			createCurrentChatCache(chatID, data)
 			continue
-		}
-
-		if update.Message.Command() != "" {
+		} else if update.Message.Command() != "" {
 			// Обрабатываем команды типа /start и остальных
+			chatID := update.Message.Chat.ID
 			log.Printf("Command: %s", update.Message.Command())
 			switch update.Message.Command() {
 			case "start":
-				titles, _ := dbClient.GetAllTitles()
-				storyBot.SendTitlesMessage(update.Message.Chat.ID, titles)
+				titles := getTitlesForKB(&dbClient, chatID)
+				if len(titles) > 0 {
+					storyBot.SendTitlesMessage(chatID, titles)
+				}
 				continue
 			default:
 				storyBot.SendHelpMessage(update.Message.Chat.ID)
 				continue
 			}
-		}
-
-		if update.Message == nil {
+		} else if update.Message == nil {
 			// Не делаем ничего, если дошли сюда, а сообщения нет.
 			// На случай странных callback
 			log.Print("Message is nil. Skipping")
 			continue
+		} else if dbClient.Titles[update.Message.Text] {
+			// Клиент написал точное название сказки
+			chatID := update.Message.Chat.ID
+			cp, err := dbClient.GetStoryPart(update.Message.Text, 0)
+			if err != nil {
+				log.Printf("Cannot get 1st part of story: %v", err)
+				continue
+			}
+			err = storyBot.SendContentMessage(chatID, cp.Image, cp.Caption)
+			if err != nil {
+				log.Printf("Cannot send 1st part of story: %v", err)
+				continue
+			}
+		} else {
+			// Отправляем хелп, если клиент прислал просто текст
+			log.Printf(
+				"Just a message: [%s] %s",
+				update.Message.From.UserName,
+				update.Message.Text)
+			storyBot.SendHelpMessage(update.Message.Chat.ID)
 		}
-
-		// Отправляем хелп, если клиент прислал просто текст
-		log.Printf(
-			"Just a message: [%s] %s",
-			update.Message.From.UserName,
-			update.Message.Text)
-		storyBot.SendHelpMessage(update.Message.Chat.ID)
 	}
 }
