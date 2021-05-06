@@ -12,6 +12,7 @@ type Story struct {
 	ID      int64
 	Title   string
 	Content []ContentPart
+	Tags    []string
 }
 
 type ContentPart struct {

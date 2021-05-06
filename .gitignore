@@ -1,3 +1,5 @@
 CyristinaStoryBot.exe
 .env
-stories
+**/*.jpg
+stories/*.json
+stories/urls
