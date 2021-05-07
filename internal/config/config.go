@@ -28,6 +28,7 @@ type (
 
 const (
 	defaultNextMsgTimeout  = time.Minute * 15
+	defaultImagesDir       = "./images"
 	defaultMongoURI        = "mongodb://localhost:27017"
 	defaultMongoDatabase   = "stories"
 	defaultMongoCollection = "stroies"
@@ -59,6 +60,7 @@ func setDefaults() {
 	viper.SetDefault("Mongo.Database", defaultMongoDatabase)
 	viper.SetDefault("Mongo.Collection", defaultMongoCollection)
 	viper.SetDefault("TG.NextMsgTimeout", defaultNextMsgTimeout)
+	viper.SetDefault("TG.ImagesDir", defaultImagesDir)
 }
 
 func parseConfigFile(filepath string) error {
