@@ -11,6 +11,7 @@ import (
 type Story struct {
 	ID      int64
 	Title   string
+	Author  string
 	Content []ContentPart
 	Tags    []string
 }
@@ -27,9 +28,11 @@ type StoryMongoClient struct {
 	allTitles   []string
 	Titles      map[string]bool
 	TitlesCount int
+	Tags        map[string][]Story
+	TagsCount   int
 }
 
-func NewClient(uri, db, collection string) (StoryMongoClient, error) {
+func NewClient(uri, db, collection string) (*StoryMongoClient, error) {
 	var client StoryMongoClient
 	var err error
 	clientOptions := options.Client().ApplyURI(uri)
@@ -38,9 +41,9 @@ func NewClient(uri, db, collection string) (StoryMongoClient, error) {
 	client.Collection = collection
 	client.Titles = make(map[string]bool)
 	if err != nil {
-		return client, err
+		return &client, err
 	}
-	return client, nil
+	return &client, nil
 }
 
 func (client StoryMongoClient) getStoryByTitle(title string) (Story, error) {

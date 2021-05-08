@@ -16,39 +16,46 @@ type NextMessage struct {
 	activeUntil time.Time
 }
 
-var cfg config.Config
+var conf *config.Config
 var currentChats = make(map[int64]*NextMessage)
-
+var dbClient *story.StoryMongoClient
+var storyBot bot.StoryBot
 var cacheTimeout = time.Minute * 15
 
-func Run(configFile string) {
+func init() {
+	var err error
 
-	cfg, err := config.Init("config/main")
+	conf, err = config.Init("config/main")
 	if err != nil {
 		log.Panicf("Cannot read config: %v", err)
 	}
 
-	go cleanup()
-
-	dbClient, err := story.NewClient(
-		cfg.Mongo.URI,
-		cfg.Mongo.Database,
-		cfg.Mongo.Collection)
+	dbClient, err = story.NewClient(
+		conf.Mongo.URI,
+		conf.Mongo.Database,
+		conf.Mongo.Collection)
 	if err != nil {
 		log.Panicf("Cannot connect to Mongo: %v", err)
 	}
-
 	log.Printf("Connected to MongoDB : %s", dbClient.DB)
-	dbClient.GetAllTitles() // первоначальная загрузка тайтлов
-	go updateTitles(&dbClient)
 
-	storyBot, err := bot.NewStoryBot(cfg.TG.Token, cfg.TG.ImagesDir)
+	err = dbClient.GetAllTitles() // первоначальная загрузка тайтлов
+	if err != nil {
+		log.Panicf("Cannot get titles: %v", err)
+	}
+
+	storyBot, err = bot.NewStoryBot(conf.TG.Token, conf.TG.ImagesDir)
 	if err != nil {
 		log.Panicf("Cannot connect to Teegram: %v", err)
 	}
 
-	log.Printf("Bot started : %s", storyBot.Bot.Self.UserName)
+	go cleanup()
+	go updateTitles(dbClient)
 
+}
+
+func Run() {
+	log.Printf("Bot started : %s", storyBot.Bot.Self.UserName)
 	for update := range storyBot.Updates {
 		// Варианты событий. что мы обрабатываем
 		if update.CallbackQuery != nil {
@@ -64,7 +71,7 @@ func Run(configFile string) {
 			if data == "OPEN_ALL_TITLES_MENU" {
 				delete(currentChats, chatID)
 				// Шлем нужную часть клавиатуры
-				titles := getTitlesForKB(&dbClient, chatID)
+				titles := getTitlesForKB(dbClient, chatID)
 				if len(titles) > 0 {
 					storyBot.SendTitlesMessage(chatID, titles)
 				}
@@ -81,7 +88,7 @@ func Run(configFile string) {
 				}
 				if next.title == "TITLES_KEYBOARD" {
 					// Шлем нужную часть клавиатуры
-					titles := getTitlesForKB(&dbClient, chatID)
+					titles := getTitlesForKB(dbClient, chatID)
 					if len(titles) > 0 {
 						storyBot.SendTitlesMessage(chatID, titles)
 					}
@@ -117,13 +124,14 @@ func Run(configFile string) {
 			}
 			createCurrentChatCache(chatID, data)
 			continue
+
 		} else if update.Message.Command() != "" {
 			// Обрабатываем команды типа /start и остальных
 			chatID := update.Message.Chat.ID
 			log.Printf("Command: %s", update.Message.Command())
 			switch update.Message.Command() {
 			case "start":
-				titles := getTitlesForKB(&dbClient, chatID)
+				titles := getTitlesForKB(dbClient, chatID)
 				if len(titles) > 0 {
 					storyBot.SendTitlesMessage(chatID, titles)
 				}
@@ -132,11 +140,13 @@ func Run(configFile string) {
 				storyBot.SendHelpMessage(update.Message.Chat.ID)
 				continue
 			}
+
 		} else if update.Message == nil {
 			// Не делаем ничего, если дошли сюда, а сообщения нет.
 			// На случай странных callback
 			log.Print("Message is nil. Skipping")
 			continue
+
 		} else if dbClient.Titles[update.Message.Text] {
 			// Клиент написал точное название сказки
 			chatID := update.Message.Chat.ID
@@ -150,6 +160,7 @@ func Run(configFile string) {
 				log.Printf("Cannot send 1st part of story: %v", err)
 				continue
 			}
+
 		} else {
 			// Отправляем хелп, если клиент прислал просто текст
 			log.Printf(

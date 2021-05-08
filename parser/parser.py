@@ -41,21 +41,26 @@ def translit(text):
         text = text.replace(key, slovar[key])
     return text
 
-
+# начало. Дергаем то, что легко и просто (тайтл, тэги, автор)
 response = requests.get(URL)
 tree = lxml.html.fromstring(response.text.replace('<br>','\n'))
+AUTHOR = 'Неизвестен'
+try:
+    AUTHOR = tree.xpath('/html/body/div[1]/div[3]/div[1]/div[1]/div[1]/a')[0].text 
+except:
+    pass
 TITLE = tree.xpath('/html/body/div[1]/div[3]/div[1]/div[1]/div[1]/h1')[0].text.split(' - ')[0]
 TITLE_IMAGE = "https://nukadeti.ru" + tree.xpath('/html/body/div[1]/div[3]/div[1]/div[1]/div[3]/img')[0].items()[0][1]
 raw_captions = []
 images_urls = []
 tags = []
-
 print(f"title: {TITLE}")
-
 tags_path = '/html/body/div[1]/div[3]/div[1]/div[4]/a'
 for a in tree.xpath(tags_path):
     tags.append(a.text)
 
+
+# Дергаем контент, разбиваем на части
 content_path = '/html/body/div[1]/div[3]/div[1]/div[1]/div[4]/div[2]'
 p_cnt = 1
 empty_p = 0
@@ -90,7 +95,7 @@ while True:
     p_cnt += 1
     if p_cnt == 1000:
         break
-
+# Составляем content partы, т.е. список картинок и описаний (captions)
 captions = []
 for i in range(len(raw_captions)):
     if raw_captions[i] != 'PICTURE_IS_HERE':
@@ -142,11 +147,20 @@ for i in range(len(images_urls)):
         handler.write(img_data)
     IMAGES.append(filename)
 
+# Там же дергаем logo и end
+logo_data = requests.get('https://u.livelib.ru/reader/tofa/r/fmm0zi3z/fmm0zi3z-r.jpg').content
+with open('logo.jpg', 'wb') as logo_file:
+    logo_file.write(logo_data)
+end_data = requests.get('https://obrazovaka.ru/wp-content/images/preview/proverochnoe/konec.jpg').content
+with open('end.jpg', 'wb') as end_file:
+    end_file.write(end_data)
+
 if not IMAGES:
     IMAGES.append("logo.jpg")
 
 result = {
     'Title': TITLE,
+    'Author': AUTHOR,
     'Tags': tags,
     'Content': [
         {

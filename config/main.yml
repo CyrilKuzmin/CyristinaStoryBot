@@ -1,6 +1,6 @@
 TG:
   NextMsgTimeout: "5m"
-  ImagesDir: "./stories"
+  ImagesDir: "./images"
 
 Mongo:
   Database: "stories"

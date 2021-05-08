@@ -51,7 +51,7 @@ func (sb StoryBot) SendHelpMessage(chatId int64) error {
 }
 
 func (sb StoryBot) SendTitlesMessage(chatId int64, titles []string) error {
-	msg := tgbotapi.NewMessage(chatId, "Выбирай сказку:")
+	msg := tgbotapi.NewMessage(chatId, "Вот что есть:")
 	msg.ReplyMarkup = getTitlesKeyboard(titles)
 	err := sb.SendMsg(msg)
 	return err
